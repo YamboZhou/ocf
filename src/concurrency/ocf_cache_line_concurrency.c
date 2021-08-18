@@ -524,7 +524,13 @@ static inline void __unlock_cache_line_rd_common(struct ocf_cache_line_concurren
 	struct __waiters_list *lst = &c->waiters_lsts[idx];
 	struct __waiter *waiter;
 
-	struct list_head *iter, *next;
+	struct list_head *iter, *next, tmp;
+	unsigned long flags = 0;
+
+	INIT_LIST_HEAD(&tmp);
+
+	/* Lock waiters list */
+	__lock_waiters_list(c, line, flags);
 
 	/*
 	 * Lock exchange scenario
@@ -560,12 +566,8 @@ static inline void __unlock_cache_line_rd_common(struct ocf_cache_line_concurren
 
 		if (locked) {
 			exchanged = false;
-			list_del(iter);
-
-			_req_on_lock(c, waiter->ctx, waiter->cb, waiter->ctx_id,
-					line, waiter->rw);
-
-			env_allocator_del(c->allocator, waiter);
+			list_move(iter, &tmp);
+			break;  /* do one by one */
 		} else {
 			break;
 		}
@@ -577,6 +579,17 @@ static inline void __unlock_cache_line_rd_common(struct ocf_cache_line_concurren
 		 */
 		__unlock_rd(c, line);
 	}
+
+	__unlock_waiters_list(c, line, flags);
+
+	list_for_each_safe(iter, next, &tmp) {
+		waiter = list_entry(iter, struct __waiter, item);
+
+		_req_on_lock(c, waiter->ctx, waiter->cb, waiter->ctx_id,
+				line, waiter->rw);
+		list_del(iter);
+		env_allocator_del(c->allocator, waiter);
+	}
 }
 
 /*
@@ -585,12 +598,7 @@ static inline void __unlock_cache_line_rd_common(struct ocf_cache_line_concurren
 static inline void __unlock_cache_line_rd(struct ocf_cache_line_concurrency *c,
 		const ocf_cache_line_t line)
 {
-	unsigned long flags = 0;
-
-	/* Lock waiters list */
-	__lock_waiters_list(c, line, flags);
 	__unlock_cache_line_rd_common(c, line);
-	__unlock_waiters_list(c, line, flags);
 }
 
 
@@ -605,7 +613,13 @@ static inline void __unlock_cache_line_wr_common(struct ocf_cache_line_concurren
 	struct __waiters_list *lst = &c->waiters_lsts[idx];
 	struct __waiter *waiter;
 
-	struct list_head *iter, *next;
+	struct list_head *iter, *next, tmp;
+	unsigned long flags = 0;
+
+	INIT_LIST_HEAD(&tmp);
+
+	/* Lock waiters list */
+	__lock_waiters_list(c, line, flags);
 
 	/*
 	 * Lock exchange scenario
@@ -641,12 +655,8 @@ static inline void __unlock_cache_line_wr_common(struct ocf_cache_line_concurren
 
 		if (locked) {
 			exchanged = false;
-			list_del(iter);
-
-			_req_on_lock(c, waiter->ctx, waiter->cb, waiter->ctx_id, line,
-					waiter->rw);
-
-			env_allocator_del(c->allocator, waiter);
+			list_move(iter, &tmp);
+			break;  /* do one by one */
 		} else {
 			break;
 		}
@@ -658,6 +668,17 @@ static inline void __unlock_cache_line_wr_common(struct ocf_cache_line_concurren
 		 */
 		__unlock_wr(c, line);
 	}
+
+	__unlock_waiters_list(c, line, flags);
+
+	list_for_each_safe(iter, next, &tmp) {
+		waiter = list_entry(iter, struct __waiter, item);
+
+		_req_on_lock(c, waiter->ctx, waiter->cb, waiter->ctx_id, line,
+				waiter->rw);
+		list_del(iter);
+		env_allocator_del(c->allocator, waiter);
+	}
 }
 
 /*
@@ -666,12 +687,7 @@ static inline void __unlock_cache_line_wr_common(struct ocf_cache_line_concurren
 static inline void __unlock_cache_line_wr(struct ocf_cache_line_concurrency *c,
 		const ocf_cache_line_t line)
 {
-	unsigned long flags = 0;
-
-	/* Lock waiters list */
-	__lock_waiters_list(c, line, flags);
 	__unlock_cache_line_wr_common(c, line);
-	__unlock_waiters_list(c, line, flags);
 }
 
 /*
